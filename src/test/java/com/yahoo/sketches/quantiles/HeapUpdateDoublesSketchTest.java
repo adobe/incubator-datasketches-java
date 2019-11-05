@@ -448,6 +448,53 @@ public class HeapUpdateDoublesSketchTest {
   }
 
   @Test
+  public void checkGetPMFSmallN() {
+    int k = PreambleUtil.DEFAULT_K;
+    int n = 10;
+    DoublesSketch qs = buildAndLoadQS(k, n, 0);
+    double[] spts = {3, 5, 7, 9};
+    double[] fracArr = qs.getPMF(spts);
+
+    assertEquals(fracArr[0], 0.2);
+    assertEquals(fracArr[1], 0.2);
+    assertEquals(fracArr[2], 0.2);
+    assertEquals(fracArr[3], 0.2);
+    assertEquals(fracArr[4], 0.2);
+  }
+
+
+  @Test
+  public void checkGetWeightedPMFLargeN() {
+    int k = PreambleUtil.DEFAULT_K;
+    int n = 1000000;
+    DoublesSketch qs = buildAndLoadQS(k, n, 0);
+    double eps = qs.getNormalizedRankError(true);
+    double[] spts = {100000, 500000, 900000};
+    double[] fracArr = qs.getWeightedPMF(spts);
+
+    assertEquals(fracArr[0], 0.00999989000011, eps);
+    assertEquals(fracArr[1], 0.23999936000064, eps);
+    assertEquals(fracArr[2], 0.55999904000096, eps);
+    assertEquals(fracArr[3], 0.19000170999829, eps);
+  }
+
+  @Test
+  public void checkGetWeightedPMFSmallN() {
+    int k = PreambleUtil.DEFAULT_K;
+    int n = 10;
+    DoublesSketch qs = buildAndLoadQS(k, n, 0);
+    double eps = qs.getNormalizedRankError(true);
+    double[] spts = {3, 5, 7, 9};
+    double[] fracArr = qs.getWeightedPMF(spts);
+
+    assertEquals(fracArr[0], 0.05454545455, eps);
+    assertEquals(fracArr[1], 0.1272727273, eps);
+    assertEquals(fracArr[2], 0.2, eps);
+    assertEquals(fracArr[3], 0.2727272727, eps);
+    assertEquals(fracArr[4], 0.3454545455, eps);
+  }
+
+  @Test
   public void checkComputeBaseBufferCount() {
     int n = 1 << 20;
     int k = PreambleUtil.DEFAULT_K;

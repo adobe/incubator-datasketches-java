@@ -385,6 +385,35 @@ public abstract class DoublesSketch {
   }
 
   /**
+   * Returns an approximation to the weighted probability mass function (PMF) of the
+   * input stream given a set of splitPoints (values).
+   *
+   * For example, let the samples and the split points be:
+   * [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], and {3, 5, 7, 9}
+   *
+   * The pmf is: [.2, .2, .2, .2, .2]
+   * The weighted pmf is: [0.05454545455, 0.1272727273, 0.2, 0.2727272727, 0.3454545455]
+   *
+   * <p>If the sketch is empty this returns null.</p>
+   *
+   * @param splitPoints an array of <i>m</i> unique, monotonically increasing double values
+   * that divide the real number line into <i>m+1</i> consecutive disjoint intervals.
+   * The definition of an "interval" is inclusive of the left splitPoint (or minimum value) and
+   * exclusive of the right splitPoint, with the exception that the last interval will include
+   * the maximum value.
+   * It is not necessary to include either the min or max values in these splitpoints.
+   *
+   * @return an array of m+1 doubles each of which is an approximation
+   * to the fraction of the input stream values (the mass) that fall into one of those intervals.
+   * The definition of an "interval" is inclusive of the left splitPoint and exclusive of the right
+   * splitPoint, with the exception that the last interval will include maximum value.
+   */
+  public double[] getWeightedPMF(final double[] splitPoints) {
+    if (isEmpty()) { return null; }
+    return DoublesPmfCdfImpl.getWeightedPmf(this, splitPoints);
+  }
+
+  /**
    * Returns the configured value of K
    * @return the configured value of K
    */

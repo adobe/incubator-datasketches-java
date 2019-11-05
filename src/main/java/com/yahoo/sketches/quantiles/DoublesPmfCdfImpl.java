@@ -5,6 +5,8 @@
 
 package com.yahoo.sketches.quantiles;
 
+import java.util.Arrays;
+
 /**
  * The PMF and CDF algorithms for quantiles.
  *
@@ -14,7 +16,7 @@ package com.yahoo.sketches.quantiles;
 class DoublesPmfCdfImpl {
 
   static double[] getPMFOrCDF(final DoublesSketch sketch, final double[] splitPoints, final boolean isCDF) {
-    final double[] buckets = internalBuildHistogram(sketch, splitPoints);
+    final double[] buckets = internalBuildHistogram(sketch, splitPoints, false);
     final long n = sketch.getN();
     if (isCDF) {
       double subtotal = 0;
@@ -31,14 +33,32 @@ class DoublesPmfCdfImpl {
   }
 
   /**
+   * The weighted PMF algorithms for quantiles.
+   */
+  static double[] getWeightedPmf(final DoublesSketch sketch, final double[] splitPoints) {
+    final double[] buckets = internalBuildHistogram(sketch, splitPoints, true);
+    final double totalWeight = Arrays.stream(buckets).sum();
+    for (int j = 0; j < buckets.length; j++) {
+      buckets[j] /= totalWeight; //normalize by n
+    }
+    return buckets;
+  }
+
+  /**
    * Shared algorithm for both PMF and CDF functions. The splitPoints must be unique, monotonically
    * increasing values.
    * @param sketch the given quantiles DoublesSketch
    * @param splitPoints an array of <i>m</i> unique, monotonically increasing doubles
    * that divide the real number line into <i>m+1</i> consecutive disjoint intervals.
+   * @param weightedBySampleValue if the value is weighted by the sample value
+   *
    * @return the unnormalized, accumulated counts of <i>m + 1</i> intervals.
    */
-  private static double[] internalBuildHistogram(final DoublesSketch sketch, final double[] splitPoints) {
+  private static double[] internalBuildHistogram(
+      final DoublesSketch sketch,
+      final double[] splitPoints,
+      final boolean weightedBySampleValue
+  ) {
     final DoublesSketchAccessor sketchAccessor = DoublesSketchAccessor.wrap(sketch);
     Util.checkSplitPointsOrder(splitPoints);
 
@@ -51,12 +71,12 @@ class DoublesPmfCdfImpl {
     if (numSplitPoints < 50) { // empirically determined crossover
       // sort not worth it when few split points
       DoublesPmfCdfImpl.bilinearTimeIncrementHistogramCounters(
-              sketchAccessor, weight, splitPoints, counters);
+              sketchAccessor, weight, splitPoints, counters, weightedBySampleValue);
     } else {
       sketchAccessor.sort();
       // sort is worth it when many split points
       DoublesPmfCdfImpl.linearTimeIncrementHistogramCounters(
-              sketchAccessor, weight, splitPoints, counters);
+              sketchAccessor, weight, splitPoints, counters, weightedBySampleValue);
     }
 
     long myBitPattern = sketch.getBitPattern();
@@ -68,7 +88,7 @@ class DoublesPmfCdfImpl {
         // the levels are already sorted so we can use the fast version
         sketchAccessor.setLevel(lvl);
         DoublesPmfCdfImpl.linearTimeIncrementHistogramCounters(
-                sketchAccessor, weight, splitPoints, counters);
+                sketchAccessor, weight, splitPoints, counters, weightedBySampleValue);
       }
     }
     return counters;
@@ -82,9 +102,15 @@ class DoublesPmfCdfImpl {
    * @param weight of the samples
    * @param splitPoints must be unique and sorted. Number of splitPoints + 1 == counters.length.
    * @param counters array of counters
+   * @param weightedBySampleValue if the value is weighted by the sample value
    */
-  static void bilinearTimeIncrementHistogramCounters(final DoublesBufferAccessor samples, final long weight,
-      final double[] splitPoints, final double[] counters) {
+  static void bilinearTimeIncrementHistogramCounters(
+      final DoublesBufferAccessor samples,
+      final long weight,
+      final double[] splitPoints,
+      final double[] counters,
+      final boolean weightedBySampleValue
+  ) {
     assert (splitPoints.length + 1 == counters.length);
     for (int i = 0; i < samples.numItems(); i++) {
       final double sample = samples.get(i);
@@ -96,10 +122,11 @@ class DoublesPmfCdfImpl {
         }
       }
       assert j < counters.length;
-      counters[j] += weight;
+
+      double sampleWeight = weightedBySampleValue ? sample : 1;
+      counters[j] += weight * sampleWeight;
     }
   }
-
 
   /**
    * This one does a linear time simultaneous walk of the samples and splitPoints. Because this
@@ -113,14 +140,21 @@ class DoublesPmfCdfImpl {
    * @param weight of the samples
    * @param splitPoints must be unique and sorted. Number of splitPoints + 1 = counters.length.
    * @param counters array of counters
+   * @param weightedBySampleValue if the value is weighted by the sample value
    */
-  static void linearTimeIncrementHistogramCounters(final DoublesBufferAccessor samples, final long weight,
-      final double[] splitPoints, final double[] counters) {
+ static void linearTimeIncrementHistogramCounters(
+      final DoublesBufferAccessor samples,
+      final long weight,
+      final double[] splitPoints,
+      final double[] counters,
+      final boolean weightedBySampleValue
+  ) {
     int i = 0;
     int j = 0;
     while (i < samples.numItems() && j < splitPoints.length) {
       if (samples.get(i) < splitPoints[j]) {
-        counters[j] += weight; // this sample goes into this bucket
+        double sampleWeight = weightedBySampleValue ? samples.get(i) : 1;
+        counters[j] += weight * sampleWeight; // this sample goes into this bucket
         i++; // move on to next sample and see whether it also goes into this bucket
       } else {
         j++; // no more samples for this bucket. move on the next bucket.
@@ -131,7 +165,20 @@ class DoublesPmfCdfImpl {
     // j == numSplitPoints(out of buckets, but there are more samples remaining)
     // we only need to do something in the latter case.
     if (j == splitPoints.length) {
-      counters[j] += (weight * (samples.numItems() - i));
+      double _remainingWeight = (weight * (samples.numItems() - i));
+
+      double remainingWeight = 0;
+      for (int k = i; k < samples.numItems(); k++) {
+        double sampleWeight = weightedBySampleValue ? samples.get(k) : 1;
+        remainingWeight += weight * sampleWeight;
+      }
+
+      // TODO: @jin version validation; remove later
+      if (!weightedBySampleValue) {
+        assert _remainingWeight == remainingWeight;
+      }
+
+      counters[j] += remainingWeight;
     }
   }
 
